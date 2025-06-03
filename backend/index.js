@@ -7,24 +7,21 @@ const multer = require('multer');
 const upload = multer();
 require('dotenv').config();
 
-const app = express(); // ✅ FIXED
+const app = express();
 
 // ✅ Middleware
 app.use(cors({
-  origin: 'http://192.168.0.100:3000',
+  origin: process.env.CLIENT_URL,
   credentials: true
 }));
-
 
 app.use(express.json());
 app.use(cookieParser());
 app.use(session({
-  secret: 'gitcloud_secret',
+  secret: process.env.SESSION_SECRET || 'gitcloud_secret',
   resave: false,
   saveUninitialized: false
 }));
-
-
 
 // 🔐 GitHub OAuth credentials
 const CLIENT_ID = process.env.GITHUB_CLIENT_ID;
@@ -32,7 +29,7 @@ const CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 
 // ✅ Step 1: GitHub login
 app.get('/auth/github', (req, res) => {
-  const redirect_uri = 'http://192.168.0.100:5000/auth/github/callback';
+  const redirect_uri = `${process.env.BASE_URL}/auth/github/callback`;
   res.redirect(
     `https://github.com/login/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${redirect_uri}&scope=repo`
   );
@@ -45,14 +42,10 @@ app.get('/auth/logout', (req, res) => {
       console.error('Logout error:', err);
       return res.status(500).send('Logout failed');
     }
-    res.clearCookie('connect.sid'); // Clear the session cookie
-    res.redirect('http://192.168.0.100:3000/login'); // Redirect to login page
+    res.clearCookie('connect.sid');
+    res.redirect(`${process.env.CLIENT_URL}/login`);
   });
 });
-
-
-
-
 
 // ✅ Step 2: GitHub callback
 app.get('/auth/github/callback', async (req, res) => {
@@ -74,14 +67,14 @@ app.get('/auth/github/callback', async (req, res) => {
     const accessToken = tokenRes.data.access_token;
     req.session.accessToken = accessToken;
 
-    // 🔄 Get user info and store username
     const userRes = await axios.get('https://api.github.com/user', {
       headers: { Authorization: `token ${accessToken}` },
     });
-    req.session.username = userRes.data.login;
 
+    req.session.username = userRes.data.login;
     console.log('✅ GitHub OAuth Success. User:', userRes.data.login);
-    res.redirect('http://192.168.0.100:3000/dashboard');
+
+    res.redirect(`${process.env.CLIENT_URL}/dashboard`);
   } catch (err) {
     console.error('❌ OAuth error:', err.message);
     res.status(500).send('GitHub OAuth failed');
@@ -134,13 +127,8 @@ app.post('/api/repos', async (req, res) => {
   const token = req.session.accessToken;
   const { name, description = '', isPrivate = false } = req.body;
 
-  if (!token) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
-
-  if (!name) {
-    return res.status(400).json({ error: 'Repository name is required' });
-  }
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+  if (!name) return res.status(400).json({ error: 'Repository name is required' });
 
   try {
     const createRes = await axios.post(
@@ -165,8 +153,6 @@ app.post('/api/repos', async (req, res) => {
   }
 });
 
-
-
 // ✅ Upload a file to a selected repo
 app.post('/api/upload', upload.array('files'), async (req, res) => {
   const files = req.files;
@@ -174,11 +160,6 @@ app.post('/api/upload', upload.array('files'), async (req, res) => {
   const accessToken = req.session.accessToken;
   const username = req.session.username;
 
-  console.log('🛠 Upload request received');
-
-  // Debug logs
-  console.log('Files:', req.files);
-  console.log('Body:', req.body);
   if (!files || files.length === 0) {
     return res.status(400).json({ error: 'No files provided' });
   }
@@ -210,14 +191,11 @@ app.post('/api/upload', upload.array('files'), async (req, res) => {
   }
 });
 
-// Delete 
+// ✅ Delete a file
 app.delete('/api/delete-file', async (req, res) => {
   const { repo, path, sha } = req.body;
   const accessToken = req.session.accessToken;
   const username = req.session.username;
-
-  console.log('➡️ Delete request body:', req.body);
-  console.log('🧠 Session:', { accessToken, username });
 
   if (!repo || !path || !sha || !accessToken || !username) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -238,7 +216,6 @@ app.delete('/api/delete-file', async (req, res) => {
       }
     );
 
-    console.log('✅ GitHub delete response:', githubRes.data);
     res.status(200).json({ message: 'File deleted', data: githubRes.data });
   } catch (err) {
     console.error('❌ GitHub delete error:', err.response?.data || err.message);
@@ -246,24 +223,18 @@ app.delete('/api/delete-file', async (req, res) => {
   }
 });
 
-
-// =================
-
-// /api/contents?repo=REPO_NAME&path=OPTIONAL_PATH
+// ✅ Get repo contents
 app.get('/api/contents', async (req, res) => {
   const { repo, path = '' } = req.query;
-  const accessToken = req.session.accessToken;  // ✅ FIXED
-  const username = req.session.username;        // ✅ FIXED
+  const accessToken = req.session.accessToken;
+  const username = req.session.username;
 
   if (!accessToken || !username) {
-    console.error('❌ Missing session username or token');
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
   try {
     const githubUrl = `https://api.github.com/repos/${username}/${repo}/contents/${path}`;
-    console.log(`📡 Fetching GitHub URL: ${githubUrl}`);
-
     const response = await axios.get(githubUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -278,21 +249,8 @@ app.get('/api/contents', async (req, res) => {
   }
 });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // ✅ Start the server
-app.listen(5000, () => {
-  console.log('🚀 Backend running on http://192.168.0.100:5000');
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Backend running on ${process.env.BASE_URL || 'http://localhost'}:${PORT}`);
 });
