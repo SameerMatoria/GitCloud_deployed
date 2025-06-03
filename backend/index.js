@@ -7,34 +7,54 @@ const multer = require('multer');
 const upload = multer();
 require('dotenv').config();
 
-const app = express();
+const app = express(); // ✅ FIXED
 
 // ✅ Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
-  credentials: true,
+  origin: 'http://192.168.0.100:3000',
+  credentials: true
 }));
+
+
 app.use(express.json());
 app.use(cookieParser());
 app.use(session({
   secret: 'gitcloud_secret',
   resave: false,
-  saveUninitialized: false,
+  saveUninitialized: false
 }));
+
+
 
 // 🔐 GitHub OAuth credentials
 const CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 
-// ✅ GitHub login route
+// ✅ Step 1: GitHub login
 app.get('/auth/github', (req, res) => {
-  const redirect_uri = `${process.env.BASE_URL}/auth/github/callback`;
+  const redirect_uri = 'http://192.168.0.100:5000/auth/github/callback';
   res.redirect(
-    `https://github.com/login/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${redirect_uri}&scope=repo&allow_signup=false&prompt=login`
+    `https://github.com/login/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${redirect_uri}&scope=repo`
   );
 });
 
-// ✅ GitHub OAuth callback
+// ✅ Logout route: destroy session and clear cookie
+app.get('/auth/logout', (req, res) => {
+  req.session.destroy(err => {
+    if (err) {
+      console.error('Logout error:', err);
+      return res.status(500).send('Logout failed');
+    }
+    res.clearCookie('connect.sid'); // Clear the session cookie
+    res.redirect('http://192.168.0.100:3000/login'); // Redirect to login page
+  });
+});
+
+
+
+
+
+// ✅ Step 2: GitHub callback
 app.get('/auth/github/callback', async (req, res) => {
   const code = req.query.code;
 
@@ -54,37 +74,27 @@ app.get('/auth/github/callback', async (req, res) => {
     const accessToken = tokenRes.data.access_token;
     req.session.accessToken = accessToken;
 
+    // 🔄 Get user info and store username
     const userRes = await axios.get('https://api.github.com/user', {
       headers: { Authorization: `token ${accessToken}` },
     });
-
     req.session.username = userRes.data.login;
-    console.log('✅ GitHub OAuth Success. User:', userRes.data.login);
 
-    res.redirect(`${process.env.CLIENT_URL}/dashboard`);
+    console.log('✅ GitHub OAuth Success. User:', userRes.data.login);
+    res.redirect('http://192.168.0.100:3000/dashboard');
   } catch (err) {
     console.error('❌ OAuth error:', err.message);
     res.status(500).send('GitHub OAuth failed');
   }
 });
 
-// ✅ Logout
-app.get('/auth/logout', (req, res) => {
-  req.session.destroy(err => {
-    if (err) {
-      console.error('Logout error:', err);
-      return res.status(500).send('Logout failed');
-    }
-    res.clearCookie('connect.sid');
-    res.redirect(`${process.env.CLIENT_URL}/login`);
-  });
-});
-
 // ✅ Get user info
 app.get('/api/user', async (req, res) => {
   const token = req.session.accessToken;
 
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+  if (!token) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
 
   try {
     const userRes = await axios.get('https://api.github.com/user', {
@@ -102,7 +112,9 @@ app.get('/api/user', async (req, res) => {
 app.get('/api/repos', async (req, res) => {
   const token = req.session.accessToken;
 
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+  if (!token) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
 
   try {
     const repoRes = await axios.get('https://api.github.com/user/repos', {
@@ -122,8 +134,13 @@ app.post('/api/repos', async (req, res) => {
   const token = req.session.accessToken;
   const { name, description = '', isPrivate = false } = req.body;
 
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
-  if (!name) return res.status(400).json({ error: 'Repository name is required' });
+  if (!token) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  if (!name) {
+    return res.status(400).json({ error: 'Repository name is required' });
+  }
 
   try {
     const createRes = await axios.post(
@@ -148,13 +165,20 @@ app.post('/api/repos', async (req, res) => {
   }
 });
 
-// ✅ Upload files
+
+
+// ✅ Upload a file to a selected repo
 app.post('/api/upload', upload.array('files'), async (req, res) => {
   const files = req.files;
   const { repo, path } = req.body;
   const accessToken = req.session.accessToken;
   const username = req.session.username;
 
+  console.log('🛠 Upload request received');
+
+  // Debug logs
+  console.log('Files:', req.files);
+  console.log('Body:', req.body);
   if (!files || files.length === 0) {
     return res.status(400).json({ error: 'No files provided' });
   }
@@ -186,11 +210,14 @@ app.post('/api/upload', upload.array('files'), async (req, res) => {
   }
 });
 
-// ✅ Delete a file
+// Delete 
 app.delete('/api/delete-file', async (req, res) => {
   const { repo, path, sha } = req.body;
   const accessToken = req.session.accessToken;
   const username = req.session.username;
+
+  console.log('➡️ Delete request body:', req.body);
+  console.log('🧠 Session:', { accessToken, username });
 
   if (!repo || !path || !sha || !accessToken || !username) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -206,11 +233,12 @@ app.delete('/api/delete-file', async (req, res) => {
         },
         data: {
           message: `Delete ${path}`,
-          sha,
-        },
+          sha
+        }
       }
     );
 
+    console.log('✅ GitHub delete response:', githubRes.data);
     res.status(200).json({ message: 'File deleted', data: githubRes.data });
   } catch (err) {
     console.error('❌ GitHub delete error:', err.response?.data || err.message);
@@ -218,18 +246,24 @@ app.delete('/api/delete-file', async (req, res) => {
   }
 });
 
-// ✅ Get repo contents
+
+// =================
+
+// /api/contents?repo=REPO_NAME&path=OPTIONAL_PATH
 app.get('/api/contents', async (req, res) => {
   const { repo, path = '' } = req.query;
-  const accessToken = req.session.accessToken;
-  const username = req.session.username;
+  const accessToken = req.session.accessToken;  // ✅ FIXED
+  const username = req.session.username;        // ✅ FIXED
 
   if (!accessToken || !username) {
+    console.error('❌ Missing session username or token');
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
   try {
     const githubUrl = `https://api.github.com/repos/${username}/${repo}/contents/${path}`;
+    console.log(`📡 Fetching GitHub URL: ${githubUrl}`);
+
     const response = await axios.get(githubUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -244,8 +278,21 @@ app.get('/api/contents', async (req, res) => {
   }
 });
 
-// ✅ Start server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Backend running on port ${PORT}`);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ✅ Start the server
+app.listen(5000, () => {
+  console.log('🚀 Backend running on http://192.168.0.100:5000');
 });

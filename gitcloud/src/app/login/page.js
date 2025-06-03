@@ -2,11 +2,11 @@
 
 export default function LoginPage() {
   const handleLogin = () => {
-    window.location.href = `${process.env.NEXT_PUBLIC_API_BASE}/auth/github`;
+    window.location.href = 'http://192.168.0.100:5000/auth/github';
   };
 
   const handleGoHome = () => {
-    window.location.href = `${process.env.NEXT_PUBLIC_CLIENT_BASE}`;
+    window.location.href = 'http://192.168.0.100:3000';
   };
 
   return (

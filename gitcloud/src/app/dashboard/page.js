@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import api from '@/lib/api';
 import { useRouter } from 'next/navigation';
 
+
 export default function DashboardPage() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -11,9 +12,11 @@ export default function DashboardPage() {
   const [newRepoName, setNewRepoName] = useState('');
   const [createStatus, setCreateStatus] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('');
-  const [fileList, setFileList] = useState([]);
+  const [file, setFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState('');
   const [selectedFilePath, setSelectedFilePath] = useState('');
+
+  const [fileList, setFileList] = useState([]);
 
   const router = useRouter();
 
@@ -36,17 +39,19 @@ export default function DashboardPage() {
     fetchUserAndRepos();
   }, []);
 
+  console.log("USER", user)
+
   const handleFileUpload = async () => {
     const formData = new FormData();
     for (let i = 0; i < fileList.length; i++) {
-      formData.append('files', fileList[i]);
+      formData.append('files', fileList[i]);  // ✅ Must be 'files'
     }
 
     formData.append('repo', selectedRepo);
     formData.append('path', selectedFilePath || '');
 
     try {
-      await api.post('/api/upload', formData, {
+      const res = await api.post('/api/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setUploadStatus('✅ Upload complete!');
@@ -55,6 +60,7 @@ export default function DashboardPage() {
       setUploadStatus('❌ Upload failed');
     }
   };
+
 
   const handleCreateRepo = async () => {
     if (!newRepoName) return;
@@ -68,10 +74,6 @@ export default function DashboardPage() {
       setCreateStatus('❌ Failed to create repo');
       console.error(err);
     }
-  };
-
-  const handleLogout = () => {
-    window.location.href = `${process.env.NEXT_PUBLIC_API_BASE}/auth/logout`;
   };
 
   if (loading) {
@@ -88,8 +90,9 @@ export default function DashboardPage() {
       <nav className="flex justify-between items-center px-6 py-4 bg-zinc-900 shadow">
         <h1 className="text-xl font-bold">GitCloud Dashboard</h1>
         <button
-          onClick={handleLogout}
+          onClick={() => (window.location.href = 'http://192.168.0.100:5000/auth/logout')}
           className="bg-white-600 border-b-2 border-transparent hover:border-white cursor-pointer text-white px-4 py-2 text-sm duration-300"
+
         >
           Logout
         </button>
@@ -97,7 +100,15 @@ export default function DashboardPage() {
 
       {/* Main content */}
       <div className="px-6 py-10 max-w-screen-2xl mx-auto">
-        {/* File Upload */}
+        {/* File preview */}
+        {/* {selectedFilePath && (
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold mb-2">Preview</h3>
+            {/* <FilePreview repo={selectedRepo} path={selectedFilePath} /> */}
+        {/* </div> */}
+        {/* )}  */}
+
+        {/* File upload */}
         <div className="bg-zinc-900 p-6 rounded-xl shadow mb-10">
           <h2 className="text-2xl font-semibold mb-4">📤 Upload File to Repository</h2>
           <div className="space-y-4">
@@ -114,6 +125,7 @@ export default function DashboardPage() {
               ))}
             </select>
 
+            {/* Flex container for file input and button */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center space-y-4 sm:space-y-0 sm:space-x-4 w-full">
               <input
                 type="file"
@@ -129,8 +141,11 @@ export default function DashboardPage() {
               </button>
             </div>
 
+
             {uploadStatus && <p className="text-sm text-zinc-400">{uploadStatus}</p>}
           </div>
+
+
         </div>
 
         {/* Create Repo */}
@@ -154,7 +169,7 @@ export default function DashboardPage() {
           {createStatus && <p className="text-sm text-zinc-400 mt-2">{createStatus}</p>}
         </div>
 
-        {/* User Info */}
+        {/* User profile */}
         <div className="flex items-center gap-6 border-b border-zinc-700 pb-6 mb-6">
           <img
             src={user.avatar_url}
@@ -168,7 +183,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Repo List */}
+        {/* Repo list */}
         <div>
           <h2 className="text-2xl font-semibold mb-4">📁 Your GitHub Repositories</h2>
           {repos.length === 0 ? (
@@ -192,16 +207,20 @@ export default function DashboardPage() {
                     {repo.description || 'No description provided.'}
                   </p>
                   <button
-                    onClick={() =>
-                      router.push(`/repo?repo=${repo.name}&username=${user.login}`)
-                    }
-                    className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 mt-2"
+                    onClick={() => {
+                      router.push(`/repo?repo=${repo.name}&username=${user.login}`);
+                    }}
+                    className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
                   >
                     View
                   </button>
+
                 </li>
+
               ))}
+
             </ul>
+
           )}
         </div>
       </div>
